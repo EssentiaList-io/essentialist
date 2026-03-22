@@ -1,7 +1,10 @@
 ---
 name: essentialist
-description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.4.0
+title: "Essentialist — Autonomous Outbound Email & Sales Pipeline"
+description: "Agent-native autonomous outbound revenue engine. Full CRM with real-time engagement scoring (0-100), lifecycle pipeline management (New → Contacted → Engaged → Qualified), multi-touch email sequences, autonomous reply handling via RAG knowledge base, company enrichment, email verification, and meeting booking — all API-first, built for agents."
+version: 4.4.1
+keywords: ["outbound", "email campaigns", "autonomous sales", "SDR", "BDR", "sales agent", "lead generation", "prospect outreach", "CRM", "engagement scoring", "email sequences", "sales pipeline", "AI reply handling", "agent-first"]
+tags: ["sales", "outbound", "crm", "automation", "ai-agent"]
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
