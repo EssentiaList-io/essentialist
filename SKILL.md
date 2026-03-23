@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.6.0
+version: 4.7.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -334,7 +334,7 @@ Assess the user's situation based on what they've told you — their goals, busi
 - When the user hits a tier limit during operation
 - When the analysis report shows a list size that exceeds their import cap
 
-Payment links are returned by `GET /api/agent/capabilities`.
+**To upgrade a user:** Call `GET /api/agent/upgrade` to get personalized payment URLs with the project embedded. Present these to the user. After payment, tier limits increase immediately and a 3-day onboarding track begins automatically.
 
 ## Playbook 7: Custom Sending Domain
 
@@ -558,6 +558,10 @@ curl -s -X PATCH "$ESSENTIALIST_API_URL/api/agent/project" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"mailgun_domain":"mail.acme.com","mailgun_api_key":"key-xxx","from_email":"sales@acme.com","from_name":"Sarah at Acme"}' | jq
+
+# Get upgrade payment links (present to user)
+curl -s "$ESSENTIALIST_API_URL/api/agent/upgrade" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 
 # Track control
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/tracks/{track_id}/activate" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
