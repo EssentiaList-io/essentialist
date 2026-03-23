@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.5.0
+version: 4.6.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -536,6 +536,16 @@ curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/events/acknowledge" \
 # Get leads
 curl -s "$ESSENTIALIST_API_URL/api/agent/leads" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# List contacts (query subscriber list)
+curl -s "$ESSENTIALIST_API_URL/api/agent/contacts?status=active&limit=100" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Send newsletter to ALL active contacts (no contacts array needed)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Weekly Update","body":"<html>...</html>"}' | jq
 
 # Add contacts to project/track
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/contacts" \
