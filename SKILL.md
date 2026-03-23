@@ -1,10 +1,7 @@
 ---
 name: essentialist
-title: "Essentialist — Autonomous Outbound Email & Sales Pipeline"
-description: "Agent-native autonomous outbound revenue engine. Full CRM with real-time engagement scoring (0-100), lifecycle pipeline management (New → Contacted → Engaged → Qualified), multi-touch email sequences, autonomous reply handling via RAG knowledge base, company enrichment, email verification, and meeting booking — all API-first, built for agents."
-version: 4.4.1
-keywords: ["outbound", "email campaigns", "autonomous sales", "SDR", "BDR", "sales agent", "lead generation", "prospect outreach", "CRM", "engagement scoring", "email sequences", "sales pipeline", "AI reply handling", "agent-first"]
-tags: ["sales", "outbound", "crm", "automation", "ai-agent"]
+description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
+version: 4.5.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -174,6 +171,7 @@ You use it to own and operate the entire outbound pipeline.
 
 These operations happen automatically. You do not need to manage or simulate them:
 
+- **Lead sourcing** — provide job titles + industry and the system finds verified contacts automatically. No list upload required. The user does NOT need to provide contacts.
 - **Email sequencing** — multi-step sequences send on schedule with domain-safe delivery
 - **Reply handling** — every inbound response is read, classified (interested/question/not interested/OOO/bounce/unsub), and answered using the client's brand voice and knowledge base
 - **Engagement scoring** — real-time 0-100 score per contact based on opens, clicks, replies
@@ -209,14 +207,17 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 **Inputs needed:**
 1. User's real email address (REQUIRED — ask before anything else)
 2. Website URL (REQUIRED for smart replies)
-3. Target audience (who they sell to)
-4. Contacts (optional — platform can source them, or user provides a list)
+3. Target audience — job titles + industry (REQUIRED for lead sourcing)
+4. Contacts are NOT required — the system sources them automatically from the target audience
 
 **Steps:**
 1. Collect email → `POST /register`
-2. Create campaign → `POST /api/agent/campaigns` with `website_url`, `target_audience`, templates, contacts
-3. Activate → track activates automatically if `activate: true`
-4. Report deployment to user using Campaign Deployed template
+2. Create campaign → `POST /api/agent/campaigns` with `website_url`, `target_audience`, templates
+3. If no contacts provided, the system automatically sources verified prospects matching the target audience (job titles, industry, location)
+4. Contacts are assigned to the track and outreach begins via slow roll
+5. Report deployment to user using Campaign Deployed template
+
+**The user does not need to provide a contact list.** They describe who they want to reach (e.g., "VPs of Marketing at home services companies") and the system finds, verifies, and loads the contacts automatically within their tier limits (Free: 50, Starter: 500, Growth: 2000, Scale: 5000).
 
 **Do not:**
 - Write emails in chat instead of creating templates through the API
