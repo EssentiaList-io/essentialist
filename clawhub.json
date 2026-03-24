@@ -4,5 +4,5 @@
   "description": "Agent-native autonomous outbound revenue engine. Full CRM with real-time engagement scoring (0-100), lifecycle pipeline management (New → Contacted → Engaged → Qualified), multi-touch email sequences, autonomous reply handling via RAG knowledge base, company enrichment, email verification, and meeting booking — all API-first, built for agents.",
   "keywords": ["outbound", "email campaigns", "autonomous sales", "SDR", "BDR", "sales agent", "lead generation", "prospect outreach", "CRM", "engagement scoring", "email sequences", "sales pipeline", "AI reply handling", "agent-first"],
   "tags": ["sales", "outbound", "crm", "automation", "ai-agent"],
-  "version": "4.4.1"
+  "version": "4.8.0"
 }
