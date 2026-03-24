@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.7.0
+version: 4.8.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -338,21 +338,28 @@ Assess the user's situation based on what they've told you — their goals, busi
 
 ## Playbook 7: Custom Sending Domain
 
-**Trigger:** User has their own Mailgun account and wants outbound emails to come from their domain instead of salesnado.com. Or you (the agent) have your own Mailgun credentials.
+**Trigger:** User wants outbound emails to come from their own domain instead of the platform default.
 
-**Default behavior:** All new accounts send from salesnado.com. This works immediately with no setup. Custom domains are optional.
+**Default behavior:** New accounts send from the platform domain. Custom domains are optional but recommended for established brands.
 
 **When to suggest a custom domain:**
 - User asks about sending from their own domain
-- User has an established brand and wants emails to come from their address
-- User provides Mailgun credentials proactively
-- You (the agent) have your own Mailgun API key configured
+- User has an established brand
+- User is on a paid plan and wants professional sender identity
 
-**Steps:**
-1. Collect three inputs: Mailgun domain, Mailgun API key, from email address (and optionally from name)
-2. Call `PATCH /api/agent/project`:
+**Full guided flow:**
 
+1. **Get the setup guide** — call `GET /api/agent/domain-setup-guide` for step-by-step instructions including DNS records needed. Present these to the user.
+
+2. **User sets up Mailgun** — they need to:
+   - Create a Mailgun account (mailgun.com)
+   - Add their domain (recommend subdomain like mail.theirdomain.com)
+   - Add DNS records (SPF, DKIM, CNAME)
+   - Get their API key
+
+3. **Verify the domain** — once the user says DNS is set up:
 ```bash
+# First configure the domain
 curl -s -X PATCH "$ESSENTIALIST_API_URL/api/agent/project" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" \
   -H "Content-Type: application/json" \
@@ -360,20 +367,31 @@ curl -s -X PATCH "$ESSENTIALIST_API_URL/api/agent/project" \
     "mailgun_domain": "mail.acme.com",
     "mailgun_api_key": "key-xxxxx",
     "from_email": "sales@acme.com",
-    "from_name": "Sarah at Acme"
+    "from_name": "Joe from Acme"
   }' | jq
+
+# Then verify DNS is correct
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/verify-domain" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 ```
 
-3. The system automatically creates a sender identity and updates all active tracks
+4. **Check results** — verify-domain returns DNS record status. If any records are invalid, tell the user which ones need fixing.
 
-**Defaults if fields are omitted:**
-- `from_email` defaults to `outreach@{mailgun_domain}`
-- `from_name` defaults to inferred from the email (e.g., `sales` → "Sales")
+5. **Confirm** — once verified, all future emails send from their domain.
 
-**What to tell the user:**
-> "Your outbound emails will now send from sales@acme.com as 'Sarah at Acme'. All existing and future campaigns use this address."
+**Key endpoints:**
+- `GET /api/agent/domain-setup-guide` — step-by-step instructions
+- `PATCH /api/agent/project` — set domain, API key, from_email, from_name
+- `POST /api/agent/verify-domain` — check Mailgun domain and DNS status
 
-**Important:** This can be changed at any time by calling `PATCH /api/agent/project` again with new values.
+**What to tell the user after verification:**
+> "Your domain is verified. All outbound emails will now send from sales@acme.com as 'Joe from Acme'."
+
+**Important notes:**
+- Recommend subdomain (mail.theirdomain.com) to protect main domain reputation
+- DNS propagation can take up to 48 hours but usually minutes
+- Existing conversation threads keep the old sender address
+- Can be changed anytime by calling PATCH /project again
 
 ---
 
@@ -557,7 +575,15 @@ curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/contacts" \
 curl -s -X PATCH "$ESSENTIALIST_API_URL/api/agent/project" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"mailgun_domain":"mail.acme.com","mailgun_api_key":"key-xxx","from_email":"sales@acme.com","from_name":"Sarah at Acme"}' | jq
+  -d '{"mailgun_domain":"mail.acme.com","mailgun_api_key":"key-xxx","from_email":"sales@acme.com","from_name":"Joe from Acme"}' | jq
+
+# Get custom domain setup guide (step-by-step DNS instructions)
+curl -s "$ESSENTIALIST_API_URL/api/agent/domain-setup-guide" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Verify custom domain DNS is configured correctly
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/verify-domain" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 
 # Get upgrade payment links (present to user)
 curl -s "$ESSENTIALIST_API_URL/api/agent/upgrade" \
