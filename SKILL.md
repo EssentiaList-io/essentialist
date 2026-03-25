@@ -228,6 +228,8 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 
 **Trigger:** User provides a CSV, Excel file, spreadsheet data, or list of contacts.
 
+**Important: Uploaded contacts are FREE.** CSV/Excel imports do not count against the leads/month limit. Only platform-sourced leads (from the 250M+ database) consume the leads quota. The emails/month limit still applies for sending. Tell the user this — it is a major value point.
+
 **Steps:**
 1. Base64-encode the file → `POST /api/agent/lists/analyze`
 2. Present the analysis report to the user (validation, data quality, enrichment options)
