@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.8.0
+version: 4.9.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -187,8 +187,11 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 
 ## Sending Modes
 
-- **Sequences** (`POST /api/agent/campaigns`) — multi-step email sequences with follow-ups, delays, and drip delivery
+- **Sequences** (`POST /api/agent/campaigns`) — multi-step email sequences with follow-ups, delays, and drip delivery. Or build piece-by-piece with templates + tracks + assign.
 - **Single Send** (`POST /api/agent/send`) — one email, one drop. Newsletter/announcement style.
+- **Templates** (`POST /api/agent/templates`) — create reusable email templates with merge variables (`{{first_name}}`, `{{company}}`, etc.)
+- **Tracks** (`POST /api/agent/tracks`) — create a sending track, link templates with custom delays between each
+- **Assign** (`POST /api/agent/tracks/{id}/assign`) — assign contacts to a track (specific IDs or all contacts)
 
 ## Data Layer
 
@@ -255,6 +258,33 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 **Steps:**
 1. `POST /api/agent/send` with subject, body (HTML), and contacts
 2. Report: queued to N contacts, sending via domain-safe delivery
+
+## Playbook 3b: Granular Sequence Building
+
+**Trigger:** User wants to build a custom email sequence step by step, with specific templates, delays, and contact targeting. More control than the all-in-one `/campaigns` endpoint.
+
+**Merge variables:** Templates support `{{first_name}}`, `{{last_name}}`, `{{email}}`, `{{company}}`, and any custom field. These are replaced with real contact data at send time.
+
+**Steps:**
+1. Create templates → `POST /api/agent/templates` for each email
+   ```json
+   {"name": "Welcome Email", "subject": "Hey {{first_name}}", "body": "<p>Hi {{first_name}},</p>...", "position": 1}
+   ```
+2. Create a track and link templates → `POST /api/agent/tracks`
+   ```json
+   {"name": "Onboarding Sequence", "send_mode": "slow_roll", "template_ids": ["id1", "id2", "id3"], "delay_days": [0, 3, 7]}
+   ```
+3. Assign contacts → `POST /api/agent/tracks/{track_id}/assign`
+   ```json
+   {"all_contacts": true}
+   ```
+   Or specific contacts: `{"contact_ids": ["id1", "id2"]}`
+4. Activate → `POST /api/agent/tracks/{track_id}/activate`
+5. Monitor → `GET /api/agent/summary`
+
+**When to use this vs `/campaigns`:**
+- `/campaigns` — quick deployment, auto-generates templates, all-in-one
+- Granular (templates + tracks + assign) — custom sequences, precise control over delays, specific contact targeting, reusable templates
 
 ## Playbook 4: Monitoring & Optimization
 
