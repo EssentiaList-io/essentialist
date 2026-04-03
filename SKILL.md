@@ -456,6 +456,26 @@ curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/verify-domain" \
 **What to tell the user after verification:**
 > "Your domain is verified. All outbound emails will now send from sales@acme.com as 'Joe from Acme'."
 
+**Inbound setup (receiving replies):**
+
+Without this, replies go to the sender's personal inbox — not to the agent. To let the agent read and respond to replies:
+
+1. **Add MX records** to the domain's DNS:
+   - `MX yourdomain.com → mxa.mailgun.org (priority 10)`
+   - `MX yourdomain.com → mxb.mailgun.org (priority 10)`
+
+2. **Create a Mailgun inbound route** (Mailgun → Receiving → Routes):
+   - Recipient: `agent@yourdomain.com` (or catch-all `.*@yourdomain.com`)
+   - Forward to: `https://essentialist-anfc.onrender.com/api/agent-inbox/webhooks/inbound`
+
+3. **Set up event webhooks** (Mailgun → Sending → yourdomain.com → Webhooks):
+   - URL: `https://essentialist-anfc.onrender.com/api/webhooks/mailgun`
+   - Events: Opened, Clicked, Permanent Failure, Temporary Failure, Spam Complaints, Unsubscribes
+
+4. **Use a dedicated agent alias** — never the owner's personal email. Use something like `kai@`, `agent@`, `sarah@`.
+
+The full domain-setup-guide endpoint (`GET /api/agent/domain-setup-guide`) includes all of this with detailed instructions. Present it to the user step by step.
+
 **Important notes:**
 - Recommend subdomain (mail.theirdomain.com) to protect main domain reputation
 - DNS propagation can take up to 48 hours but usually minutes
