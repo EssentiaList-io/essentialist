@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 4.9.0
+version: 5.0.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -192,6 +192,9 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 - **Templates** (`POST /api/agent/templates`) — create reusable email templates with merge variables (`{{first_name}}`, `{{company}}`, etc.)
 - **Tracks** (`POST /api/agent/tracks`) — create a sending track, link templates with custom delays between each
 - **Assign** (`POST /api/agent/tracks/{id}/assign`) — assign contacts to a track (specific IDs or all contacts)
+- **Inbox** (`GET /api/agent/inbox`) — read inbound replies, get thread context, contact details
+- **Reply** (`POST /api/agent/reply`) — reply in-thread with proper email threading headers
+- **Knowledge Base** (`GET /api/agent/kb`) — list docs or semantic search (`?query=`) for RAG context
 
 ## Data Layer
 
@@ -285,6 +288,35 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 **When to use this vs `/campaigns`:**
 - `/campaigns` — quick deployment, auto-generates templates, all-in-one
 - Granular (templates + tracks + assign) — custom sequences, precise control over delays, specific contact targeting, reusable templates
+
+## Playbook 3c: Inbox Management (Read & Reply)
+
+**Trigger:** Agent needs to read replies, respond to contacts, or operate as an email inbox.
+
+**Capabilities:**
+- Read all inbound replies from contacts
+- Read a specific message with full thread history and contact details
+- Reply in-thread (properly threaded with In-Reply-To headers)
+- Search the knowledge base for context before replying
+
+**Steps:**
+1. Check inbox → `GET /api/agent/inbox` (or `?unread_only=true`)
+   - Returns: sender, subject, body, classification, contact_id, thread_id
+2. Read a specific message → `GET /api/agent/inbox/{message_id}`
+   - Returns: full message, thread history, contact info (name, title, engagement score)
+3. Search KB for context → `GET /api/agent/kb?query=relevant+topic`
+   - Returns: top 5 relevant knowledge base chunks (RAG retrieval)
+4. Reply in-thread → `POST /api/agent/reply`
+   ```json
+   {"to": "prospect@company.com", "subject": "Re: Your question", "body": "<p>Thanks for reaching out...</p>", "in_reply_to": "<message-id>", "thread_id": "thread-id"}
+   ```
+
+**Operating as an inbox:** Poll `GET /api/agent/inbox?unread_only=true` periodically. For each new message, read the thread, consult the KB, compose a reply, and send it. The agent operates as a fully autonomous email responder — or as a human-assisted inbox where the agent drafts and the human approves.
+
+**Knowledge Base access:**
+- `GET /api/agent/kb` — list all documents (product catalogs, brand rules, uploaded files)
+- `GET /api/agent/kb?query=pricing+details` — semantic search across all KB content
+- Use KB context to write informed, accurate replies
 
 ## Playbook 4: Monitoring & Optimization
 
