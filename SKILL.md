@@ -194,7 +194,7 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 - **Assign** (`POST /api/agent/tracks/{id}/assign`) — assign contacts to a track (specific IDs or all contacts)
 - **Inbox** (`GET /api/agent/inbox`) — read inbound replies, get thread context, contact details
 - **Reply** (`POST /api/agent/reply`) — reply in-thread with proper email threading headers
-- **Knowledge Base** (`GET /api/agent/kb`) — list docs or semantic search (`?query=`) for RAG context
+- **Knowledge Base** (`GET /api/agent/kb`) — list docs or semantic search (`?query=`) for RAG context. (`POST /api/agent/kb`) — add URL, text, or file to KB.
 
 ## Data Layer
 
@@ -316,7 +316,12 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 **Knowledge Base access:**
 - `GET /api/agent/kb` — list all documents (product catalogs, brand rules, uploaded files)
 - `GET /api/agent/kb?query=pricing+details` — semantic search across all KB content
+- `POST /api/agent/kb` — add content to the KB:
+  - URL: `{"url": "https://example.com/page"}` — scrapes and ingests
+  - Text: `{"text": "content here", "title": "My Document"}` — raw text
+  - File: `{"file_base64": "...", "filename": "doc.pdf"}` — PDF, TXT, CSV
 - Use KB context to write informed, accurate replies
+- Feed the KB with product pages, blog posts, newsletters, bios, and reference material
 
 ## Playbook 4: Monitoring & Optimization
 
