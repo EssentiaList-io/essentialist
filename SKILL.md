@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 5.0.0
+version: 5.1.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -282,8 +282,9 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
    {"all_contacts": true}
    ```
    Or specific contacts: `{"contact_ids": ["id1", "id2"]}`
-4. Activate → `POST /api/agent/tracks/{track_id}/activate`
-5. Monitor → `GET /api/agent/summary`
+4. Approve sequence → `PATCH /api/agent/project` with `{"sequence_approved": true}` — **REQUIRED before any sends will go out.** The slow roll cron will not send from slow_roll tracks until this gate is set.
+5. Activate → `POST /api/agent/tracks/{track_id}/activate`
+6. Monitor → `GET /api/agent/summary`
 
 **When to use this vs `/campaigns`:**
 - `/campaigns` — quick deployment, auto-generates templates, all-in-one
@@ -450,7 +451,7 @@ curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/verify-domain" \
 
 **Key endpoints:**
 - `GET /api/agent/domain-setup-guide` — step-by-step instructions
-- `PATCH /api/agent/project` — set domain, API key, from_email, from_name
+- `PATCH /api/agent/project` — set domain, API key, from_email, from_name, sequence_approved, system_prompt
 - `POST /api/agent/verify-domain` — check Mailgun domain and DNS status
 
 **What to tell the user after verification:**
