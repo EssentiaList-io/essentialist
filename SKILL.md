@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 5.1.0
+version: 5.2.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -201,6 +201,45 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 - **Engagement scoring**: opens (+10), clicks (+20), replies (+35), interest bonus (+15), bounces (-50), unsubs (-100), 14-day decay
 - **Lifecycle pipeline**: New → Contacted (first send) → Engaged (score 25+) → Qualified (score 60+) → Won (manual)
 - **Pipeline query**: `GET /api/agent/summary` returns `data.pipeline` with counts per stage
+
+## Send Reliability Guarantees (Read This Before Sending)
+
+The platform now enforces three guarantees at the infrastructure layer. Trust them; do not work around them.
+
+### 1. Duplicate Sends Are Impossible
+
+Every send claims a row in a `send_attempts` table with a Postgres UNIQUE constraint on `(project_id, contact_id, content_hash)`. The hash is computed from the **unrendered** template (subject + body, before merge variables). This means:
+
+- **Identical templates sent twice to the same contact in the same project will be rejected by the database.** No application code path can produce a duplicate, even under retries, races, or simultaneous code paths.
+- **Newsletter blasts that include some contacts already sent the same content** will return the original-sent contacts as `action: "skipped"` with `reason: "duplicate_blocked"`. The successful contacts will still go out.
+- **Different content** (different subject OR different body) **to the same contact is allowed.** This is by design — a Welcome email and a Weekly Newsletter can both reach the same person.
+
+### 2. Retries Are Safe
+
+If you receive a network error, timeout, or 5xx response from `/send`, `/campaigns`, or `/flush`, **retry the exact same request**. Duplicates are blocked at the database, not at your retry layer. For maximum safety against network-edge replays, include an `Idempotency-Key: <uuid>` header — the response is cached for 24h and returned verbatim on repeated requests with the same key.
+
+### 3. Large Sends Run Asynchronously
+
+`POST /send` with `immediate: true` and **>50 contacts** returns a 200 response immediately and runs the send in a detached background task on the server. The HTTP response does not mean "done"; it means "accepted and running." To confirm completion:
+
+- Poll `GET /api/agent/summary` until `data.sends.last_24h` reflects the new volume, or
+- Call `GET /api/agent/leads` / `GET /api/agent/events` to observe receipt-level evidence.
+
+For ≤50 contacts, the send completes inline within the response.
+
+### Skipped Reasons You'll See
+
+`/send` and `/campaigns` responses include per-contact `details`. Recognize these `reason` values:
+
+| Reason | Meaning | Action |
+|--------|---------|--------|
+| `already_sent_today` | Cross-track one-per-day rule | None — expected |
+| `duplicate_blocked` | Same template already sent to this contact in this project | None — guaranteed-once semantics did their job |
+| `bounced` | Contact previously bounced, auto-suppressed | Surface to user; do not retry |
+| `unsubscribed` | Contact opted out | None — never resend |
+| `unverified_email` | Hunter verification failed | None — system-managed |
+
+**Do not** treat `duplicate_blocked` as a failure. It is the platform doing its job.
 
 ---
 
@@ -483,6 +522,78 @@ The full domain-setup-guide endpoint (`GET /api/agent/domain-setup-guide`) inclu
 - Existing conversation threads keep the old sender address
 - Can be changed anytime by calling PATCH /project again
 
+## Playbook 8: Sending Safely at Scale (Retries, Idempotency, Flush)
+
+**Trigger:** Any time you call `/send`, `/campaigns`, or run a newsletter-style blast — especially with >50 contacts.
+
+This playbook codifies the operational contract between the agent and the platform. Read the "Send Reliability Guarantees" section in Layer 1 first.
+
+### When the response says 200 but you're not sure it finished
+
+For sends with >50 contacts and `immediate: true`, the HTTP 200 is an acknowledgement, not a completion. The actual send runs detached on the server. To confirm:
+
+```bash
+# 1. Initial call returns 200 with summary like "queued 840 contacts"
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"subject":"...","body":"<html>...</html>","immediate":true}' | jq
+
+# 2. ~30s–10min later, verify
+curl -s "$ESSENTIALIST_API_URL/api/agent/summary" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq '.data.sends'
+```
+
+Throughput: ~50 sends per second for the detached path. 10,000 contacts complete in roughly 5–10 minutes.
+
+### Always include Idempotency-Key for blasts
+
+Generate a UUID per logical send operation and include it as the `Idempotency-Key` header. The server caches the response for 24 hours; replays with the same key return the original response without re-sending.
+
+```bash
+KEY=$(uuidgen)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Idempotency-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Weekly Update","body":"<html>...</html>"}' | jq
+```
+
+If the request times out or returns 5xx, re-issue with the **same** key. The platform either replays the cached response (already-processed) or starts fresh (never-processed). Either way, no duplicates.
+
+### When a track stalls — use Flush
+
+A single-send track (newsletter / welcome / digest) sometimes needs to drain immediately rather than wait for the next slowroll cron cycle. Use `POST /api/slowroll/flush/{track_id}`. The endpoint:
+
+- Acquires a per-track lock so two flushes can't run concurrently
+- Paginates all active assignments past the Supabase 1000-row limit
+- Sends synchronously with built-in dedup
+- Returns counts: `sent`, `failed`, `skipped`, `already_sent`, `duplicate_blocked`
+
+```bash
+curl -s -X POST "$ESSENTIALIST_API_URL/api/slowroll/flush/$TRACK_ID" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+```
+
+Flush is **only** for `single_send` tracks (newsletter style). For multi-step `slow_roll` sequences, let the cron do its work — gaps between rail cars are intentional cooldowns, not stalls.
+
+### Activate-then-immediate (do not combine)
+
+A common foot-gun: calling `/campaigns` with both `immediate: true` AND `activate: true`. This used to race the slowroll cron and double-send.
+
+**Now safe.** When `immediate: true`, the track is created in `draft` status and the immediate-send fires once. The cron will not double-fire it. You no longer need to choose between activation and immediate send; the platform handles the sequencing.
+
+### Mental model
+
+Think of every send as a claim against `(project_id, contact_id, content_hash)`:
+
+- Claim succeeds → Mailgun fires → marked `sent`
+- Claim fails (already exists) → Mailgun does NOT fire → caller sees `duplicate_blocked`
+- Claim succeeds but Mailgun fails → marked `failed` → a future retry with the same content rejoins the same row and can succeed
+
+You never need to track "did I already send this." The platform does.
+
 ---
 
 ## Registration Requirements
@@ -683,6 +794,18 @@ curl -s "$ESSENTIALIST_API_URL/api/agent/upgrade" \
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/tracks/{track_id}/activate" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/tracks/{track_id}/pause" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/tracks/{track_id}/resume" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Flush a single-send track (drains all active assignments synchronously, dedup-safe)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/slowroll/flush/{track_id}" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Idempotent send — pass Idempotency-Key to make retries safe (response cached 24h)
+KEY=$(uuidgen)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Idempotency-Key: $KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Weekly Update","body":"<html>...</html>"}' | jq
 
 # Pipeline queries
 curl -s "$ESSENTIALIST_API_URL/api/projects/{id}/contacts/by-stage?stage=qualified" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
