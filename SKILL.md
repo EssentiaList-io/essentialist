@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 5.2.0
+version: 5.3.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -220,12 +220,33 @@ If you receive a network error, timeout, or 5xx response from `/send`, `/campaig
 
 ### 3. Large Sends Run Asynchronously
 
-`POST /send` with `immediate: true` and **>50 contacts** returns a 200 response immediately and runs the send in a detached background task on the server. The HTTP response does not mean "done"; it means "accepted and running." To confirm completion:
+`POST /send` with `immediate: true` and **>50 contacts** returns a 200 response immediately and runs the send in a detached background task on the server. The HTTP response does not mean "done"; it means "accepted and running."
 
-- Poll `GET /api/agent/summary` until `data.sends.last_24h` reflects the new volume, or
-- Call `GET /api/agent/leads` / `GET /api/agent/events` to observe receipt-level evidence.
+**Volume contract (verified 2026-05-21):**
+- Up to **10,000+ contacts in a single `/send` call** — the import phase completes in ~3-5 seconds regardless of contact count (bulk SQL since v5.3).
+- Throughput on the background sender: ~50–100 sends/sec. 10k contacts complete server-side in 5-15 minutes after the response returns.
+- Track status will be `draft_immediate` (not `active`) for immediate-mode sends. This is correct — the slow_roll cron skips draft_immediate tracks so it cannot race with the background dispatcher. Do NOT manually activate an immediate-mode track; you will cause duplicate sends.
+
+To confirm completion:
+- Call `GET /api/agent/mailgun-stats/{track_id}` (see Section 4 below) — the most accurate reconciliation source.
+- Or poll `GET /api/agent/summary` until `data.sends.last_24h` reflects the new volume.
+- Or watch `GET /api/agent/events` for delivery-level evidence.
 
 For ≤50 contacts, the send completes inline within the response.
+
+### 4. Reconciling Sends via mailgun-stats
+
+`GET /api/agent/mailgun-stats/{track_id}` returns aggregated Mailgun event counts for a track (accepted, delivered, opened, clicked, bounced, complained, unsubscribed) plus a per-recipient breakdown.
+
+**Default `limit` is 10000 events** (raised from 300 in v5.3 after the Issue #16 incident). For tracks under ~3,000 sends this returns full ground truth in one call. For larger tracks, the response includes:
+
+- `truncated: true` if you hit the limit and there are more events on Mailgun's side
+- `limit_applied: <int>` — what limit value was used
+- `pages_fetched: <int>` — Mailgun pagination steps consumed
+
+If `truncated=true`, retry with `?limit=25000` (or higher) to fetch more. Hard ceiling: 12,000 events per call regardless of the limit param.
+
+**Reading the response correctly:** the `counts` object reflects Mailgun's reality — it is the source of truth for "did the message actually leave Mailgun?" Use this to reconcile against the platform's `sends.sent_at` counter when in doubt. A discrepancy between `contacts.completed` and `counts.delivered` means contacts were dedup-skipped (`reason: "duplicate_blocked"`), not lost.
 
 ### Skipped Reasons You'll See
 
@@ -298,8 +319,21 @@ For ≤50 contacts, the send completes inline within the response.
 **Trigger:** User wants to send one email to a list. Not a sequence.
 
 **Steps:**
-1. `POST /api/agent/send` with subject, body (HTML), and contacts
-2. Report: queued to N contacts, sending via domain-safe delivery
+1. `POST /api/agent/send` with `subject`, `body` (HTML), `contacts`, `immediate: true`, `activate: true`
+2. Read the response immediately — the HTTP response returns within ~5 seconds even for 10k+ contacts (bulk import). For >50 contacts, look for `data.immediate_background: true` and `data.immediate_queued: <N>` confirming the send is dispatched.
+3. After ~5-15 minutes (depending on volume), reconcile via `GET /api/agent/mailgun-stats/{track_id}`. Verify `counts.accepted` and `counts.delivered` roughly match the expected count.
+4. Report to user: "Sent to N subscribers. Delivered: M. Opens so far: K."
+
+**Volume guidance:**
+- Up to **10,000 contacts in one call** is fully supported as of v5.3. You do NOT need to chunk into multiple `/send` calls.
+- If the call appears to fail with a 5xx or timeout, retry with the SAME `Idempotency-Key` header — duplicates are blocked at the database. Do NOT chunk the audience as a workaround; that path created the Issue #16 multi-batch reconciliation mess.
+- For an existing `single_send` track that needs to drain (e.g., recovery from a partial send), use `POST /api/slowroll/flush/{track_id}` — it paginates and dedupes correctly.
+
+**Track status note:** With `immediate: true`, the track ends up in `draft_immediate` status, NOT `active`. This is intentional — the slow_roll cron is purposely blind to `draft_immediate` so it cannot double-fire. Do not manually activate the track.
+
+**Do not:**
+- Manually activate an immediate-mode track (will cause double sends)
+- Chunk a >3,000 contact audience into multiple `/send` calls (no longer needed; chunking creates the dedup-driven "1,099 of 8,941 delivered" confusion seen 2026-05-20)
 
 ## Playbook 3b: Granular Sequence Building
 
