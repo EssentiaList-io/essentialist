@@ -1,7 +1,7 @@
 ---
 name: essentialist
 description: Autonomous outbound revenue engine. Own and operate the entire SDR/BDR pipeline — prospect discovery, email sequencing, reply handling, lead qualification, and meeting booking. 250M+ contact database, real-time engagement scoring, company enrichment, lifecycle pipeline. Your dedicated outbound sales infrastructure.
-version: 5.3.0
+version: 6.0.0
 metadata: {"openclaw":{"requires":{"env":["ESSENTIALIST_API_URL"],"bins":["curl","jq"]},"primaryEnv":"ESSENTIALIST_API_KEY","emoji":"🧠"}}
 ---
 
@@ -185,10 +185,35 @@ These operations happen automatically. You do not need to manage or simulate the
 
 Your role is to **decide, configure, activate, monitor, and optimize** — not to manually execute any of the above.
 
+## The Two-List Model (v6.0)
+
+**Every contact lives on exactly ONE of two lists:**
+
+- **Master Newsletter list** — anyone you've emailed at least once. The audience for ongoing newsletter blasts.
+- **Warm Intro list** — cold contacts you've never emailed. The audience for first-touch outreach.
+
+This is the canonical mental model. Don't reason about lifecycle stages directly when answering "how big is the list" or "who needs a warm intro" — use the named list endpoints.
+
+| Question | Endpoint |
+|---|---|
+| How big are both lists, and when did we last send to each? | `GET /api/agent/lists` |
+| Show me everyone on the Master Newsletter list (paginated) | `GET /api/agent/lists/master` |
+| Show me the cold contacts waiting on a warm intro (paginated) | `GET /api/agent/lists/warm-intro` |
+| How did the last newsletter perform? | `GET /api/agent/newsletter/last` |
+| Show me past N newsletter blasts with stats | `GET /api/agent/newsletter/history?limit=10` |
+| Send a newsletter to everyone on the Master list | `POST /api/agent/send` with `audience: "master_newsletter"` |
+| Send a warm intro to the cold pile | `POST /api/agent/send` with `audience: "warm_intro"` |
+
+**Do not cobble** `/api/agent/contacts?stage=X` queries to estimate list sizes — use `/api/agent/lists`. The lifecycle-stage → list mapping is a server-side concern.
+
+**Audience-by-name in `/send`** is preferred over passing a `contacts` array for blasts. The server resolves the audience atomically at send time so you can't drift or miscount. When you pass `audience: "warm_intro"`, the resulting track is auto-flagged `intro_track=true` so the daily graduation cron picks survivors up after the 7-day silent-consent window and promotes them to the Master Newsletter list automatically.
+
 ## Sending Modes
 
+- **Master Newsletter Send** (`POST /api/agent/send` with `audience: "master_newsletter"`) — atomic newsletter blast to everyone you've emailed. Preferred path for ongoing newsletters.
+- **Warm Intro Send** (`POST /api/agent/send` with `audience: "warm_intro"`) — atomic first-touch blast to your cold pile. Auto-flags the track for the graduation cron.
+- **Single Send with explicit contacts** (`POST /api/agent/send` with `contacts: [...]`) — when you have a specific list, not a named audience. Mutually exclusive with `audience`.
 - **Sequences** (`POST /api/agent/campaigns`) — multi-step email sequences with follow-ups, delays, and drip delivery. Or build piece-by-piece with templates + tracks + assign.
-- **Single Send** (`POST /api/agent/send`) — one email, one drop. Newsletter/announcement style.
 - **Templates** (`POST /api/agent/templates`) — create reusable email templates with merge variables (`{{first_name}}`, `{{company}}`, etc.)
 - **Tracks** (`POST /api/agent/tracks`) — create a sending track, link templates with custom delays between each
 - **Assign** (`POST /api/agent/tracks/{id}/assign`) — assign contacts to a track (specific IDs or all contacts)
@@ -199,8 +224,10 @@ Your role is to **decide, configure, activate, monitor, and optimize** — not t
 ## Data Layer
 
 - **Engagement scoring**: opens (+10), clicks (+20), replies (+35), interest bonus (+15), bounces (-50), unsubs (-100), 14-day decay
-- **Lifecycle pipeline**: New → Contacted (first send) → Engaged (score 25+) → Qualified (score 60+) → Won (manual)
-- **Pipeline query**: `GET /api/agent/summary` returns `data.pipeline` with counts per stage
+- **Lifecycle pipeline** (internal — prefer the two-list model above for user-facing reasoning): New → Contacted (first send) → Engaged (score 25+) → Qualified (score 60+) → Won (manual)
+  - `lifecycle_stage='new'` AND `global_status='active'` = Warm Intro list
+  - `lifecycle_stage IN ('contacted','engaged','qualified')` AND `global_status='active'` = Master Newsletter list
+- **Pipeline query**: `GET /api/agent/summary` returns `data.pipeline` with counts per stage. For list sizes, prefer `GET /api/agent/lists`.
 
 ## Send Reliability Guarantees (Read This Before Sending)
 
@@ -318,11 +345,61 @@ If `truncated=true`, retry with `?limit=25000` (or higher) to fetch more. Hard c
 
 **Trigger:** User wants to send one email to a list. Not a sequence.
 
+**Preferred path (v6.0):** Use `audience` so the server resolves the recipient list atomically. You don't fetch contacts first; you can't drift; you can't accidentally send to the wrong list.
+
+```bash
+# Newsletter blast to everyone you've emailed (Master Newsletter list)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Issue #18 — title",
+    "body": "<div>...</div>",
+    "audience": "master_newsletter",
+    "immediate": true,
+    "activate": true
+  }' | jq
+
+# Warm intro to the cold pile (auto-flags intro_track=true)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "subject": "Quick note from a CTO in Austin",
+    "body": "<div>...</div>",
+    "audience": "warm_intro",
+    "immediate": true,
+    "activate": true
+  }' | jq
+```
+
+**Before sending — confirm list sizes:**
+```bash
+curl -s "$ESSENTIALIST_API_URL/api/agent/lists" -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+```
+Returns both list sizes + last-send timestamps. Use this to size-check your blast before firing.
+
+**After sending — reconcile performance:**
+```bash
+# Most recent newsletter (resolved by name pattern + intro_track filter automatically)
+curl -s "$ESSENTIALIST_API_URL/api/agent/newsletter/last" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Recent newsletter history with stats
+curl -s "$ESSENTIALIST_API_URL/api/agent/newsletter/history?limit=10" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+```
+
+Both endpoints return sent/opens/clicks/bounces/unsubs + computed rates. No need to find track_ids manually.
+
 **Steps:**
-1. `POST /api/agent/send` with `subject`, `body` (HTML), `contacts`, `immediate: true`, `activate: true`
-2. Read the response immediately — the HTTP response returns within ~5 seconds even for 10k+ contacts (bulk import). For >50 contacts, look for `data.immediate_background: true` and `data.immediate_queued: <N>` confirming the send is dispatched.
-3. After ~5-15 minutes (depending on volume), reconcile via `GET /api/agent/mailgun-stats/{track_id}`. Verify `counts.accepted` and `counts.delivered` roughly match the expected count.
-4. Report to user: "Sent to N subscribers. Delivered: M. Opens so far: K."
+1. `GET /api/agent/lists` — confirm audience size matches expectations.
+2. `POST /api/agent/send` with `audience` + `subject` + `body` + `immediate: true` + `activate: true`. The server resolves the audience.
+3. Read the response — returns within ~5 seconds even for 10k+ contacts (bulk import). For >50 contacts, look for `data.immediate_background: true` and `data.immediate_queued: <N>` confirming dispatch.
+4. After ~5–15 minutes, reconcile via `GET /api/agent/newsletter/last`. Returns the same data as mailgun-stats but you don't need the track_id.
+5. Report to user: "Sent to N subscribers. Delivered: M. Open rate: X%."
+
+**Explicit-contacts path (legacy):** If you have a specific contact list that isn't either named audience (e.g., a one-off announcement to a subset), pass `contacts: [...]` instead of `audience`. Mutually exclusive — passing both is a 400.
 
 **Volume guidance:**
 - Up to **10,000 contacts in one call** is fully supported as of v5.3. You do NOT need to chunk into multiple `/send` calls.
@@ -331,9 +408,13 @@ If `truncated=true`, retry with `?limit=25000` (or higher) to fetch more. Hard c
 
 **Track status note:** With `immediate: true`, the track ends up in `draft_immediate` status, NOT `active`. This is intentional — the slow_roll cron is purposely blind to `draft_immediate` so it cannot double-fire. Do not manually activate the track.
 
+**Warm intro graduation note:** When `audience: "warm_intro"`, the resulting track is auto-flagged `intro_track=true`. The daily `/api/cron/graduate-warm-intros` run promotes contacts past their 7-day silent-consent window from the Warm Intro list to the Master Newsletter list automatically. You don't need to manage this.
+
 **Do not:**
 - Manually activate an immediate-mode track (will cause double sends)
 - Chunk a >3,000 contact audience into multiple `/send` calls (no longer needed; chunking creates the dedup-driven "1,099 of 8,941 delivered" confusion seen 2026-05-20)
+- Cobble `/api/agent/contacts?stage=X` queries to estimate audience size — use `/api/agent/lists`
+- Pass both `audience` AND `contacts` in the same `/send` call (returns 400)
 
 ## Playbook 3b: Granular Sequence Building
 
@@ -790,15 +871,48 @@ curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/events/acknowledge" \
 curl -s "$ESSENTIALIST_API_URL/api/agent/leads" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 
-# List contacts (query subscriber list)
+# List contacts (low-level filter — prefer /api/agent/lists for blasts)
 curl -s "$ESSENTIALIST_API_URL/api/agent/contacts?status=active&limit=100" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
 
-# Send newsletter to ALL active contacts (no contacts array needed)
+# ── Two-list model (v6.0) ──────────────────────────────────────────────
+# Both list sizes + last-send timestamps (the canonical "how's it going" call)
+curl -s "$ESSENTIALIST_API_URL/api/agent/lists" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Paginated Master Newsletter list (everyone you've emailed)
+curl -s "$ESSENTIALIST_API_URL/api/agent/lists/master?limit=100&offset=0" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Paginated Warm Intro list (cold pile, never emailed)
+curl -s "$ESSENTIALIST_API_URL/api/agent/lists/warm-intro?limit=100&offset=0" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Most recent newsletter performance (no track_id needed)
+curl -s "$ESSENTIALIST_API_URL/api/agent/newsletter/last" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Recent newsletter history with stats
+curl -s "$ESSENTIALIST_API_URL/api/agent/newsletter/history?limit=10" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" | jq
+
+# Send to Master Newsletter list (atomic — server resolves the audience)
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
   -H "X-API-Key: $ESSENTIALIST_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"subject":"Weekly Update","body":"<html>...</html>"}' | jq
+  -d '{"subject":"Issue #N","body":"<div>...</div>","audience":"master_newsletter","immediate":true,"activate":true}' | jq
+
+# Send warm intro to the cold pile (auto-flags intro_track=true)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"Quick note","body":"<div>...</div>","audience":"warm_intro","immediate":true,"activate":true}' | jq
+
+# Send to explicit contact list (when neither named audience fits)
+curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/send" \
+  -H "X-API-Key: $ESSENTIALIST_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"subject":"...","body":"<div>...</div>","contacts":[{"email":"x@y.com"}]}' | jq
 
 # Add contacts to project/track
 curl -s -X POST "$ESSENTIALIST_API_URL/api/agent/contacts" \
