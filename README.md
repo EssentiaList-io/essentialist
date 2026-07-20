@@ -40,6 +40,18 @@ Once installed, tell your agent:
 
 The skill's behavioral rules will activate automatically. Your agent will collect your email and website, deploy an outbound pipeline, and begin generating leads.
 
+## Optional X/Twitter Context
+
+OpenClaw users who need public X/Twitter context before or after a campaign can install [TweetClaw](https://github.com/Xquik-dev/tweetclaw) separately:
+
+```bash
+openclaw plugins install @xquik/tweetclaw
+```
+
+Use TweetClaw to search tweets, search tweet replies, monitor brand or competitor mentions, and capture tweet URLs, author handles, timestamps, and observed pain points as research notes. Keep Essentialist as the source of prospect records, email verification, sequencing, reply handling, and CRM lifecycle state; do not import raw social handles as email contacts without consent or verification.
+
+TweetClaw uses Xquik, an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ## Documentation
 
 - [SKILL.md](SKILL.md) — Full operating doctrine (capability, playbooks, mandatory invocation rules)

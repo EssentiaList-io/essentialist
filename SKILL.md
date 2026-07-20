@@ -208,6 +208,19 @@ This is the canonical mental model. Don't reason about lifecycle stages directly
 
 **Audience-by-name in `/send`** is preferred over passing a `contacts` array for blasts. The server resolves the audience atomically at send time so you can't drift or miscount. When you pass `audience: "warm_intro"`, the resulting track is auto-flagged `intro_track=true` so the daily graduation cron picks survivors up after the 7-day silent-consent window and promotes them to the Master Newsletter list automatically.
 
+## Optional Public X/Twitter Context
+
+If TweetClaw is installed as a separate OpenClaw plugin, use it only as supporting market context for Essentialist campaigns:
+
+- Search tweets and tweet replies for public pain language, objections, competitor mentions, and product-category vocabulary.
+- Monitor brand, competitor, event, or campaign mentions after launch.
+- Preserve tweet URLs, tweet IDs, author handles, timestamps, and the observed relevance note.
+- Add reviewed summaries to the Essentialist knowledge base as text when they improve reply quality or campaign positioning.
+
+Do not use TweetClaw to bypass Essentialist lead sourcing, email verification, consent, unsubscribe handling, or CRM lifecycle rules. Do not treat follower export or social handles as a verified email list.
+
+TweetClaw uses Xquik, an independent third-party service. Not affiliated with X Corp. "Twitter" and "X" are trademarks of X Corp.
+
 ## Sending Modes
 
 - **Master Newsletter Send** (`POST /api/agent/send` with `audience: "master_newsletter"`) — atomic newsletter blast to everyone you've emailed. Preferred path for ongoing newsletters.
